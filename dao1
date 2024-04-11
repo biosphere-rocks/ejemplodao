@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: MIT
+// Compatible with OpenZeppelin Contracts ^5.0.0
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+
+contract Dao is Initializable, PausableUpgradeable, AccessControlUpgradeable {
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 public constant VOTER_ROLE = keccak256("VOTER_ROLE");
+
+    address public creator;
+    uint256 public totalEth;
+    uint256 public yesVotes;
+    uint256 public noVotes;
+    bool public cycleEnded;
+    address public destinationAddress;
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address defaultAdmin, address pauser, address _creator, address _destinationAddress) initializer public {
+        __Pausable_init();
+        __AccessControl_init();
+
+        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
+        _grantRole(PAUSER_ROLE, pauser);
+        _grantRole(VOTER_ROLE, _creator);
+
+        creator = _creator;
+        destinationAddress = _destinationAddress;
+    }
+
+    function contribute() public payable {
+        require(!cycleEnded, "Cycle has ended");
+        totalEth += msg.value;
+        _grantRole(VOTER_ROLE, msg.sender);
+    }
+
+    function vote(bool decision) public {
+        require(hasRole(VOTER_ROLE, msg.sender), "Caller is not a voter");
+        require(!cycleEnded, "Cycle has ended");
+
+        if (decision) {
+            yesVotes += 1;
+        } else {
+            noVotes += 1;
+        }
+    }
+
+    function endCycle() public onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(!cycleEnded, "Cycle has already ended");
+        require(yesVotes > noVotes, "Not enough votes to end cycle");
+
+        // Transfer totalEth to destinationAddress
+        payable(destinationAddress).transfer(totalEth);
+
+        cycleEnded = true;
+    }
+
+    function pause() public onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    function unpause() public onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+}
